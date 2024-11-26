@@ -1,5 +1,5 @@
 // Compilation: 
-// gcc my_msi_driver.c -lhidapi-hidraw -lsensors -o my_msi_driver
+// gcc my_msi_driver.c -lhidapi-hidraw -lsensors -o /where/you/want/my_msi_driver
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,7 +63,7 @@ void monitor_cpu_temperature(hid_device *handle)
                         int ns = 0;
                         while (!stop && ((subfeature = sensors_get_all_subfeatures(chip, feature, &ns)) != NULL)) {
                             if (subfeature->type == SENSORS_SUBFEATURE_TEMP_INPUT) {
-                                // Initialize the hidapi library
+                                // Temperature subfeature found, initialize the hidapi library
                                 res = hid_init();
                                 // Listen to temperature in an infinite loop
                                 while (!stop) {
@@ -75,6 +75,7 @@ void monitor_cpu_temperature(hid_device *handle)
                                         buf[5] = (itemp >> 8) & 0xFF;
                                         res = hid_write(handle, buf, 65);
                                     }
+                                    // Wait 2s
                                     usleep(2000*1000);
                                 }
                             }
@@ -114,7 +115,8 @@ void set_fan_mode(hid_device *handle, int fan_mode)
 }
 
 /**
- * Signal handler to stop the daemon
+ * Signal handler to stop the daemon.
+ * Can take up to 2s to stop (sleeping time between temperature reads).
  */
 void stopit()
 {
@@ -153,6 +155,7 @@ int main(int argc, char *argv[])
     // Open the device using the VID, PID
     handle = hid_open(0x0db0, 0x6a05, NULL);
     set_fan_mode(handle, fan_mode);
+    // Start daemon if requested
     if (start_daemon) {
         signal(SIGTERM, stopit);
         monitor_cpu_temperature(handle);

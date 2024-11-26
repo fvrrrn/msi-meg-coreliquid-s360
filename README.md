@@ -18,11 +18,18 @@ should do the job.
 You need to install libsensors-dev and libhidapi-dev to compile. Then, it is as simple as:
 
 ```bash
-gcc my_msi_driver.c -lhidapi-hidraw -lsensors -o my_msi_driver
+gcc my_msi_driver.c -lhidapi-hidraw -lsensors -o /where/you/want/my_msi_driver
 ```
 
 Here, I use libhidapi-hidraw, but I guess it would work as well with libhidapi-libusb0.
-I choose the primer beacause it seems to be the recommanded one these days.
+I choose the primer because it seems to be the recommanded one these days.
+
+## Usage
+my_msi_driver **-M** *mode* [ **startd** ]
+
+**-M** sets the cooling mode to *mode*.
+
+**startd** starts the driver daemon. This should rather be done through systemctl (see below).
 
 ## Daemon
 If you want this program to run as a daemon on your system, just:
@@ -39,7 +46,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable my_msi_driver.service
 ```
 
-The driver will start as a daemon on next boot. If you want it to run straight on:
+The driver will start as a daemon on next boot. If you want it to run at once:
 
 ```bash
 sudo systemctl start my_msi_driver
