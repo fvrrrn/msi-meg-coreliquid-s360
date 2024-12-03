@@ -12,7 +12,23 @@ temperature and fan and pump speed:
     DEFAULT = 4,
     SMART = 5.
 In this first version, the CUSTOMIZE = 3 mode is not allowed, as the 5 others
-should do the job.
+should do the job. Here are pictures from the MSI soft for Windows, showing the link
+between temperature and fan speeds for three modes.
+
+.. figure:: pictures/silent.png
+   :align: center
+   
+   SILENT mode
+
+.. figure:: pictures/balance.png
+   :align: center
+   
+   BALANCE mode
+
+.. figure:: pictures/game.png
+   :align: center
+   
+   GAME mode
 
 ## Compilation
 You need to install libsensors-dev and libhidapi-dev to compile. Then, it is as simple as:
