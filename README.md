@@ -2,9 +2,9 @@
 A simple linux driver for MSI MEG Coreliquid S360 AIO watercooling
 
 Having unsuccessfully tried to use liquidctl (https://github.com/liquidctl/liquidctl) 
-to drive my MSI MEG coreliquid AIO watercooling under linux (specificaly Debian 12), 
-I decided to buid mine. I don't care about the display on this AIO, I just want it 
-to react to CPU temperature. I only allow 4 predefined modes to make the link between 
+to drive my MSI MEG coreliquid AIO watercooling under linux (specifically Debian 12), 
+I decided to build mine. I don't care about the display on this AIO, I just want it 
+to react to CPU temperature. I only allow 5 predefined modes to make the link between 
 temperature and fan and pump speed:
     SILENT = 0,
     BALANCE = 1,

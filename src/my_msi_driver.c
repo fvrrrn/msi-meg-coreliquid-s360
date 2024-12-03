@@ -31,9 +31,9 @@ void monitor_cpu_temperature(hid_device *handle)
 {
     int nr, ret, res;
     unsigned char buf[65];
-    sensors_chip_name *chip;
-    sensors_feature *feature;
-    sensors_subfeature *subfeature;
+    const sensors_chip_name *chip;
+    const sensors_feature *feature;
+    const sensors_subfeature *subfeature;
     int ifreq = 3000, itemp;
     double temp;
     
