@@ -6,10 +6,14 @@
 #include <string.h>
 #include <unistd.h>
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 typedef enum FanMode { SILENT = 0, BALANCE = 1, GAME = 2, CUSTOMIZE = 3, DEFAULT = 4, SMART = 5 } FanMode;
+typedef enum Option { OPT_UNKNOWN, OPT_MODE, OPT_STARTD } Option;
 
 int stop = 0;
 
+Option option_by_string(const char *arg);
 void set_fan_mode(hid_device *handle, int fan_mode);
 const int get_temperature_chip_subfeature(const sensors_subfeature *subfeature);
 int run_monitor_daemon(hid_device *handle, const sensors_subfeature *subfeature, int *stop_flag);
@@ -17,36 +21,64 @@ int run_monitor_daemon(hid_device *handle, const sensors_subfeature *subfeature,
 void stop_handler() { stop = 1; }
 
 int main(int argc, char *argv[]) {
-    int i, fan_mode = SMART;
+    int fan_mode = SMART;
     int start_daemon = 0;
-    hid_device *handle = NULL;
 
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-M")) {
-            fan_mode = atoi(argv[++i]);
-            if ((fan_mode < 0) || (fan_mode > 5) || (fan_mode == 3)) {
-                printf("Allowed modes:\n");
-                printf("0 : silent\n");
-                printf("1 : balance\n"), printf("2 : game\n");
-                printf("4 : default (constant)\n");
-                printf("5 : smart\n");
-                exit(0);
-            }
-        } else if (!strcmp(argv[i], "startd"))
-            start_daemon = 1;
+    for (int i = 1; i < argc; i++) {
+        switch (option_by_string(argv[i])) {
+            case OPT_MODE:
+                // TODO: rewrite with strtol
+                switch (atoi(argv[MIN(i + 1, argc - 1)])) {
+                    case 0:
+                        fan_mode = 0;
+                        break;
+                    case 2:
+                        fan_mode = 2;
+                    case 1:
+                        fan_mode = 1;
+                        break;
+                    case 4:
+                        fan_mode = 4;
+                        break;
+                    case 5:
+                        fan_mode = 5;
+                        break;
+                    default:
+                        printf("Allowed modes:\n");
+                        printf("0 : silent\n");
+                        printf("1 : balance\n");
+                        printf("2 : game\n");
+                        printf("4 : default (constant)\n");
+                        printf("5 : smart\n");
+                        exit(1);
+                        break;
+                }
+                break;
+            case OPT_STARTD:
+                start_daemon = 1;
+                break;
+            default:
+                printf("Usage: -M [0-5] startd\n");
+                exit(1);
+                break;
+        }
     }
 
-    int res = hid_init();
-    printf("hid_init status: %d\n", res);
-    // Open the device using the VID, PID
-    handle = hid_open(0x0db0, 0x6a05, NULL);
-    if (!handle) {
-        fprintf(stderr, "Unable to open device\n");
+    if (!hid_init()) {
+        fprintf(stderr, "%ls", hid_error(NULL));
+        hid_exit();
+        exit(1);
+    }
+
+    hid_device *handle = NULL;
+    if (!(handle = hid_open(0x0db0, 0x6a05, NULL))) {
+        fprintf(stderr, "%ls", hid_error(NULL));
         hid_exit();
         exit(1);
     }
 
     set_fan_mode(handle, fan_mode);
+
     if (start_daemon) {
         signal(SIGTERM, stop_handler);
 
@@ -108,12 +140,12 @@ int run_monitor_daemon(hid_device *handle, const sensors_subfeature *subfeature,
     double temp;
     while (!(*stop_flag)) {
         if (!get_chip_subfeature_temperature(subfeature, &temp)) {
-            fprintf(stderr, "error\n");
-            return 1;
+            fprintf(stderr, "Could not read chip subfeature temperature\n");
+            return -1;
         }
         if (!write_chip_subfeature_temperature(handle, temp)) {
-            fprintf(stderr, "error\n");
-            return 1;
+            fprintf(stderr, "Could not write chip subfeature temperature\n");
+            return -1;
         }
         usleep(2000 * 1000);  // 2 seconds
     }
@@ -140,4 +172,10 @@ void set_fan_mode(hid_device *handle, int fan_mode) {
     hid_write(handle, buf, 65);
     buf[1] = 0x41;
     hid_write(handle, buf, 65);
+}
+
+Option option_by_string(const char *arg) {
+    if (strcmp(arg, "-M") == 0) return OPT_MODE;
+    if (strcmp(arg, "startd") == 0) return OPT_STARTD;
+    return OPT_UNKNOWN;
 }
