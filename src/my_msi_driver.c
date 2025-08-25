@@ -7,22 +7,24 @@
 #include <unistd.h>
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define TRUE 1
+#define FALSE 0
 
 typedef enum FanMode { SILENT = 0, BALANCE = 1, GAME = 2, CUSTOMIZE = 3, DEFAULT = 4, SMART = 5 } FanMode;
 typedef enum Option { OPT_UNKNOWN, OPT_MODE, OPT_STARTD } Option;
 
-int stop = 0;
+int should_stop = FALSE;
 
 Option option_by_string(const char *arg);
 void set_fan_mode(hid_device *handle, int fan_mode);
 const int get_temperature_chip_subfeature(const sensors_subfeature *subfeature);
 int run_monitor_daemon(hid_device *handle, const sensors_subfeature *subfeature, int *stop_flag);
 
-void stop_handler() { stop = 1; }
+void stop_handler() { should_stop = TRUE; }
 
 int main(int argc, char *argv[]) {
     int fan_mode = SMART;
-    int start_daemon = 0;
+    int should_start_daemon = FALSE;
 
     for (int i = 1; i < argc; i++) {
         switch (option_by_string(argv[i])) {
@@ -55,7 +57,7 @@ int main(int argc, char *argv[]) {
                 }
                 break;
             case OPT_STARTD:
-                start_daemon = 1;
+                should_start_daemon = TRUE;
                 break;
             default:
                 printf("Usage: -M [0-5] startd\n");
@@ -70,50 +72,52 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    hid_device *handle = NULL;
-    if (!(handle = hid_open(0x0db0, 0x6a05, NULL))) {
+    hid_device *hid_device = NULL;
+    if (!(hid_device = hid_open(0x0db0, 0x6a05, NULL))) {
         fprintf(stderr, "%ls", hid_error(NULL));
         hid_exit();
         exit(1);
     }
 
-    set_fan_mode(handle, fan_mode);
+    set_fan_mode(hid_device, fan_mode);
 
-    if (start_daemon) {
+    if (should_start_daemon) {
         signal(SIGTERM, stop_handler);
 
-        const sensors_subfeature *subfeature;
-        if (!get_temperature_chip_subfeature(subfeature)) {
+        const sensors_subfeature *temperature_input_subfeature;
+        if (!get_temperature_chip_subfeature(temperature_input_subfeature)) {
             fprintf(stderr, "Unable to get subfeature\n");
-            hid_close(handle);
+            hid_close(hid_device);
             hid_exit();
             exit(1);
         }
 
-        if (!run_monitor_daemon(handle, subfeature, &stop)) {
+        if (!run_monitor_daemon(hid_device, temperature_input_subfeature, &should_stop)) {
             fprintf(stderr, "Daemon exited abnormally.\n");
-            hid_close(handle);
+            hid_close(hid_device);
             hid_exit();
             exit(1);
         }
     }
-    hid_close(handle);
+    hid_close(hid_device);
     hid_exit();
 
     exit(0);
 }
 
-const int get_temperature_chip_subfeature(const sensors_subfeature *subfeature) {
-    const sensors_chip_name *chip;
-    const sensors_feature *feature;
+const int get_temperature_chip_subfeature(const sensors_subfeature *chip_subfeature) {
+    const sensors_chip_name *chip_name;
+    const sensors_feature *chip_feature;
 
-    for (int nr = 0; (chip = sensors_get_detected_chips(NULL, &nr)) != NULL;)
-        if (!strcmp(chip->prefix, "coretemp") || !strcmp(chip->prefix, "k10temp"))
-            for (int nf = 0; (feature = sensors_get_features(chip, &nf)) != NULL;)
-                if (feature->type == SENSORS_FEATURE_TEMP &&
-                    (!strcmp(feature->name, "temp1") || !strcmp(feature->name, "Tctl")))
-                    for (int ns = 0; (subfeature = sensors_get_all_subfeatures(chip, feature, &ns)) != NULL;)
-                        if (subfeature->type == SENSORS_SUBFEATURE_TEMP_INPUT) return 0;
+    for (int chip_index = 0; (chip_name = sensors_get_detected_chips(NULL, &chip_index)) != NULL;)
+        if (!strcmp(chip_name->prefix, "coretemp") || !strcmp(chip_name->prefix, "k10temp"))
+            for (int feature_index = 0;
+                 (chip_feature = sensors_get_features(chip_name, &feature_index)) != NULL;)
+                if (chip_feature->type == SENSORS_FEATURE_TEMP &&
+                    (!strcmp(chip_feature->name, "temp1") || !strcmp(chip_feature->name, "Tctl")))
+                    for (int subfeature_index = 0; (chip_subfeature = sensors_get_all_subfeatures(
+                                                        chip_name, chip_feature, &subfeature_index)) != NULL;)
+                        if (chip_subfeature->type == SENSORS_SUBFEATURE_TEMP_INPUT) return 0;
 
     return -1;
 }
@@ -122,28 +126,28 @@ int get_chip_subfeature_temperature(const sensors_subfeature *subfeature, double
     return sensors_get_value(NULL, subfeature->number, temperature);
 }
 
-int write_chip_subfeature_temperature(hid_device *handle, double temperature) {
-    int itemp;
-    unsigned char buf[65];
+int write_chip_subfeature_temperature(hid_device *hid_device, double temperature) {
+    int temperature_int;
+    unsigned char chip_settings[65];
 
-    itemp = (int)temperature;
-    memset(buf, 0, sizeof(buf));
-    buf[0] = 0xD0;
-    buf[1] = 0x85;
-    buf[4] = itemp & 0xFF;
-    buf[5] = (itemp >> 8) & 0xFF;
+    temperature_int = (int)temperature;
+    memset(chip_settings, 0, sizeof(chip_settings));
+    chip_settings[0] = 0xD0;
+    chip_settings[1] = 0x85;
+    chip_settings[4] = temperature_int & 0xFF;
+    chip_settings[5] = (temperature_int >> 8) & 0xFF;
 
-    return hid_write(handle, buf, 65);
+    return hid_write(hid_device, chip_settings, 65);
 }
 
-int run_monitor_daemon(hid_device *handle, const sensors_subfeature *subfeature, int *stop_flag) {
-    double temp;
+int run_monitor_daemon(hid_device *hid_device, const sensors_subfeature *subfeature, int *stop_flag) {
+    double temperature;
     while (!(*stop_flag)) {
-        if (!get_chip_subfeature_temperature(subfeature, &temp)) {
+        if (!get_chip_subfeature_temperature(subfeature, &temperature)) {
             fprintf(stderr, "Could not read chip subfeature temperature\n");
             return -1;
         }
-        if (!write_chip_subfeature_temperature(handle, temp)) {
+        if (!write_chip_subfeature_temperature(hid_device, temperature)) {
             fprintf(stderr, "Could not write chip subfeature temperature\n");
             return -1;
         }
@@ -158,20 +162,20 @@ int run_monitor_daemon(hid_device *handle, const sensors_subfeature *subfeature,
  * \param handle handle on the AIO device
  * \param fan_mode the choosen fan mode
  */
-void set_fan_mode(hid_device *handle, int fan_mode) {
-    unsigned char buf[65];
+void set_fan_mode(hid_device *hid_device, int fan_mode) {
+    unsigned char chip_settings[65];
 
-    memset(buf, 0, sizeof(buf));
-    buf[0] = 0xD0;
-    buf[1] = 0x40;
-    buf[2] = fan_mode;
-    buf[10] = fan_mode;
-    buf[18] = fan_mode;
-    buf[26] = fan_mode;
-    buf[34] = fan_mode;
-    hid_write(handle, buf, 65);
-    buf[1] = 0x41;
-    hid_write(handle, buf, 65);
+    memset(chip_settings, 0, sizeof(chip_settings));
+    chip_settings[0] = 0xD0;
+    chip_settings[1] = 0x40;
+    chip_settings[2] = fan_mode;
+    chip_settings[10] = fan_mode;
+    chip_settings[18] = fan_mode;
+    chip_settings[26] = fan_mode;
+    chip_settings[34] = fan_mode;
+    hid_write(hid_device, chip_settings, 65);
+    chip_settings[1] = 0x41;
+    hid_write(hid_device, chip_settings, 65);
 }
 
 Option option_by_string(const char *arg) {
